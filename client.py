@@ -1,49 +1,103 @@
 import socket
+import struct
+import time
 import os
 
-def send_image(ip, port, file_path, window_size):
-    # create UDP socket
+# constants
+PACKET_SIZE = 1000
+HEADER_FORMAT = 'H H H'  # sequence nr, ack nr, flags
+HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
+DATA_SIZE = PACKET_SIZE - HEADER_SIZE
+WINDOW_SIZE = 3
+TIMEOUT = 0.5 # 500ms
+
+# packet types
+SYN = 0b0001
+ACK = 0b0010
+FIN = 0b0100
+
+def create_packet(seq_num, ack_num, flags, data=b""):
+    header = struct.pack(HEADER_FORMAT, seq_num, ack_num, flags)
+    return header + data
+
+def unpack_packet(packet):
+    header = packet[:HEADER_SIZE]
+    data = packet[HEADER_SIZE:]
+    seq_num, ack_num, flags = struct.unpack(HEADER_FORMAT, header)
+    return seq_num, ack_num, flags, data
+
+def start_client(server_ip, server_port, file_name):
+    # create DUP socket
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    client_socket.settimeout(TIMEOUT)
 
-    # open the image file to read it in bionary mode
-    with open(file_path, 'rb') as image:
-        image_data = image.read()
+    syn_packet = create_packet(0, 0, SYN)
+    client_socket.sendto(syn_packet, (server_ip, server_port))
+    print("SYN sent")
 
-    # calculate the number of chunks
-    chunk_size = 994
-    total_chunks = len(image_data) // chunk_size + (len(image_data) % chunk_size != 0)
-    print(f"Total chunks to send: {total_chunks}")
-
-    # send data in chunks
-    for i in range(total_chunks):
-        start = i * chunk_size
-        end = start + chunk_size
-        chunk_data = image_data[start:end]
-
-        # add a header (sequence number as header)
-        header = i.to_bytes(1, byteorder='big')
-        packet = header + chunk_data
-
-        # send packet
-        client_socket.sendto(packet, (ip, port))
-
-        # wait for ack
-        try:
-            client.socket.settimeout(2)
-            ack, _ = client_socket.recvfrom(1024)
-            print(f"Received ACK for chunk {i}: {ack}")
-        except socket.timeout:
-            print(f"No ACK received for chunk {i}, resending...")
-            client_socket.sendto(packet, (ip,port))
-
-        if (i+1) % window_size == 0:
-            input("Press enter to continue sending the next window...")
+    try:
+        packet, _ = client_socket.recvfrom(PACKET_SIZE)
+        seq_num, ack_num, flags, data = unpack_packet(packet)
+        if flags & (SYN | ACK):
+            print("SYN ACK received")
+            ack_packet = create_packet(0, 0, ACK)
+            client_socket.sendto(ack_packet, (server_ip, server_port))
+            print("ACK sent")
+            print("Connection established")
+    except socket.timeout:
+        print("Timeout waiting for SYN-ACK")
+        return
     
-    # send teardown singal
-    client_socket.sendto(b'\x00', (ip, port))
-    print("All data sent. Sending teardown signal and closing socket.")
-    client_socket.close()
+    # data transfer
+    sequence_number = 1
+    window_base = 1
+    window = []
+    file_size = os.path.getsize(file_name)
+    bytes_sent = 0
 
-if __name__ == '__main__':
-    send_image('192.168.1.1', 12345, 'path_to_image.jpg',3)
+    with open(file_name, 'rb') as f:
+        while bytes_sent < file_size:
+            while len(window) < WINDOW_SIZE and bytes_sent < file_size:
+                data = f.read(DATA_SIZE)
+                if not data:
+                    break
+                packet = create_packet(sequence_number, 0, 0, data)
+                client_socket.sendto(packet, (server_ip, server_port))
+                window.append(packet)
+                print(f"{time.strftime('%H:%M:%S')} -- packet with s = {sequence_number} sent, sliding window = {', '.join(str(seq) for seq, _, _, _ in [unpack_packet(p) for p in window])}")
+                sequence_number += 1
+                bytes_sent += len(data)
+
+            try:
+                ack_packet, _ = client_socket.recvfrom(PACKET_SIZE)
+                _, ack_num, flags, _ = unpack_packet(ack_packet)
+                if flags & ACK:
+                    print(f"ACK for packet {ack_num} received")
+                    while window and unpack_packet(window[0])[0] <= ack_num:
+                        window.pop(0)
+                    window_base = ack_num + 1
+            except socket.timeout:
+                print("Timeout, resending window")
+                for packet in window:
+                    client_socket.sendto(packet, (server_ip, server_port))
+                    print(f"Resent packet {unpack_packet(packet)[0]}")
+
+    print("Data transfer complete")
+
+    # connection teardown
+    fin_packet = create_packet(0, 0, FIN)
+    client_socket.sendto(fin_packet, (server_ip, server_port))
+    print("FIN packet sent")
+
+    try:
+        fin_ack_packet, _ = client_socket.recvfrom(PACKET_SIZE)
+        seq_num, ack_num, flags, data = unpack_packet(fin_ack_packet)
+        if flags & (FIN | ACK):
+            print("FIN ACK received")
+            print("Connection closed")
+    except socket.timeout:
+        print("Timeout waiting for FIN-ACK")
+
+    client_socket.close()
+    
 
