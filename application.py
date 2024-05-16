@@ -112,51 +112,52 @@ def start_client(server_ip, server_port, file_name):
     file_size = os.path.getsize(file_name)  # calculates size of the file we want to transfer
     bytes_sent = 0  # nr of bytes sent
 
-    with open(file_name, 'rb') as f: 
-        while bytes_sent < file_size:
-            while len(window) < WINDOW_SIZE  and bytes_sent < file_size:
-                data = f.read(DATA_SIZE)
+    with open(file_name, 'rb') as f:   
+        while bytes_sent < file_size: # as long as we havent sent every byte in the file
+            while len(window) < WINDOW_SIZE  and bytes_sent < file_size: # as long as the window isnt full, and there are still bytes to be sent in the file
+                data = f.read(DATA_SIZE) # read a chunk of data from file
                 if not data:
-                    break
-                packet = create_packet(sequence_number, 0, 0, data)
-                client_socket.sendto(packet, (server_ip, server_port))
-                window.append(packet)
-                window_seq_numbers = ', '.join(str(unpack_packet(p)[0]) for p in window)
-                print(f"{datetime.now().strftime('%H:%M:%S.%f')} -- packet with s = {sequence_number} sent, sliding window = {{{window_seq_numbers}}}")
-                sequence_number += 1
-                bytes_sent += len(data)
+                    break # break if theres no data left
+                packet = create_packet(sequence_number, 0, 0, data)  #create a packet with sequence nr and data chunk
+                client_socket.sendto(packet, (server_ip, server_port)) # send to server
+                window.append(packet) # add packet to sliding window
+                window_seq_numbers = ', '.join(str(unpack_packet(p)[0]) for p in window) # string rep of the sequence nr in packets of windows separated by comma
+                print(f"{datetime.now().strftime('%H:%M:%S.%f')} -- packet with s = {sequence_number} sent, sliding window = {{{window_seq_numbers}}}") # prints in the given format of assignment
+                sequence_number += 1 # increment nr for next packet
+                bytes_sent += len(data) # keep track of data we've sent
 
             try:
-                ack_packet, _ = client_socket.recvfrom(PACKET_SIZE)
-                _, ack_num, flags, _ = unpack_packet(ack_packet)
-                if flags & ACK:
-                    print(f"{datetime.now().strftime('%H:%M:%S.%f')} -- ACK for packet {ack_num} received")
-                    while window and unpack_packet(window[0])[0] <= ack_num:
+                ack_packet, _ = client_socket.recvfrom(PACKET_SIZE)  # receives ack from server
+                _, ack_num, flags, _ = unpack_packet(ack_packet)    # unpacks for ack number and flags
+                if flags & ACK: # checks ack in packet
+                    print(f"{datetime.now().strftime('%H:%M:%S.%f')} -- ACK for packet {ack_num} received") # notifies reception in given format of assignment
+                    while window and unpack_packet(window[0])[0] <= ack_num:  # if theres packets in the window that have been acked, remove them
                         window.pop(0)
+
             except socket.timeout:
-                print("Timeout, resending window")
+                print("Timeout, resending window")  # notifies timeout
                 for packet in window:
-                    client_socket.sendto(packet, (server_ip, server_port))
-                    print(f"Resent packet {unpack_packet(packet)[0]}")
+                    client_socket.sendto(packet, (server_ip, server_port)) # retansmits all packets in the window
+                    print(f"Resent packet {unpack_packet(packet)[0]}") # prints a message for each resent packet
 
     print("....\nDATA Finished")
 
     #connection teardown
     print("\n\nConnection Teardown:\n")
-    fin_packet = create_packet(0, 0, FIN)
+    fin_packet = create_packet(0, 0, FIN)  # creates a packet to indicate connection end to server
     client_socket.sendto(fin_packet, (server_ip, server_port))
     print("FIN packet is sent")
 
     try:
-        fin_ack_packet, _ = client_socket.recvfrom(PACKET_SIZE)
-        seq_num, ack_num, flags, data = unpack_packet(fin_ack_packet)
-        if flags & (FIN | ACK):
+        fin_ack_packet, _ = client_socket.recvfrom(PACKET_SIZE)     # received a fin ack from server
+        seq_num, ack_num, flags, data = unpack_packet(fin_ack_packet)   # unpacks data from packet
+        if flags & (FIN | ACK):     # if it contains fin ack, notify reception and closing of connection
             print("FIN ACK packet is received")
             print("Connection closes")
     except socket.timeout:
         print("Timeout waiting for FIN-ACK")
 
-    client_socket.close()
+    client_socket.close()   # close connection
 
 #___________________________________________________________________________________________________________________________________________________________________________________
 #_________________ MAIN ____________________________________________________________________________________________________________________________________________________________        
