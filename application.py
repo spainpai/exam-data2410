@@ -10,7 +10,6 @@ PACKET_SIZE = 1000 # total size of a packet in bytes
 HEADER_FORMAT = 'H H H' # defines header in packet to three unsigned short integers, H = 2 bytes, 6 total. Represents sequence number, ack number and flags respectively. 
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT) # calculates size in bytes
 DATA_SIZE = PACKET_SIZE - HEADER_SIZE # determines how much data can fit per packet considering header
-WINDOW_SIZE = 3 # default window size,  will change to be flexible tomorrow
 TIMEOUT = 0.5 # sets timeout to 0.5 seconds, client will wait for this long for ack before retransmitting packages
 
 # flag types, notation 0b gives them binary notations that makes it easier to manipulate them seperately in protocol
@@ -81,7 +80,7 @@ def start_server(server_ip, server_port, output_file):
 
 #___________________________________________________________________________________________________________________________________________________________________________________
 #__________________CLIENT SIDE______________________________________________________________________________________________________________________________________________________
-def start_client(server_ip, server_port, file_name):
+def start_client(server_ip, server_port, file_name, window_size):
     # UDP socket
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     client_socket.settimeout(TIMEOUT) # set client timeout to constant value
@@ -114,7 +113,7 @@ def start_client(server_ip, server_port, file_name):
 
     with open(file_name, 'rb') as f:   
         while bytes_sent < file_size: # as long as we havent sent every byte in the file
-            while len(window) < WINDOW_SIZE  and bytes_sent < file_size: # as long as the window isnt full, and there are still bytes to be sent in the file
+            while len(window) < window_size  and bytes_sent < file_size: # as long as the window isnt full, and there are still bytes to be sent in the file
                 data = f.read(DATA_SIZE) # read a chunk of data from file
                 if not data:
                     break # break if theres no data left
@@ -184,9 +183,9 @@ def main():
         if not args.file:
             print("Please specify the file to be sent using -f option")
         else:
-            start_client(args.ip, args.port, args.file)
+            start_client(args.ip, args.port, args.file, args.window)
     else:
-        print("Specify launch option server or client")
+        print("Specify launch option server or client using -s or -c")
 
 
 if __name__ == '__main__':
