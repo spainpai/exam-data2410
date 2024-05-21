@@ -1,0 +1,25 @@
+This is a program written for the portfolio exam of DATA2410 due 21.05.2024 12:00, by candidate number 267.
+The function of this program is to transfer a file using a UDP based transmission, with self coded reliability protocols.
+Simulated packet loss is demonstrated on the report included alongside this project. The following are some tests you can use to data using this program:
+
+To invoke the server you can use the following command line arguments:
+    python3 <application_filepath> -s -i 127.0.0.1 -p 8080
+Expected output:
+    server is listening on 127.0.0.1:8080
+The port has a default value, so you can also invoke it using:
+    python3 <application_filepath> -s -i 127.0.0.1 -p
+To save the file transfer under a specified filename you can invoke server like so:
+    python3 <application_filepath> -s -i 127.0.0.1 -p 8080 -f output_file.jpg
+If you don't specify the filename you wish to save under, it will save to "received_file.jpg" as default.
+If you want to discard a packet as a test you can use the -d flag like so:
+    python3 <application_filepath> -s -i 127.0.0.1 -p 8080 -d <packet_number>
+For an example of this, check the report under Question 3. 
+
+To invoke the client you can use the following command line arguments:
+    python3 <application_filepath> -c -i 127.0.0.1 -p 8080 -f <image_filepath>
+The -f flag is required on client side, so there will be an error message if you do not include it.
+If you want to specify a different sliding window than default value (3), you can use -w:
+    python3 <application_filepath> -c -i 127.0.0.1 -p -f <image_filepath> -w 10
+
+Server and client may not be invoked at the same time.
+Either server or client mode must be selected to run the program. 
